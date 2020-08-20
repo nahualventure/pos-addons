@@ -607,10 +607,10 @@ class PosOrder(models.Model):
             order.product_list = " + ".join(product_list)
 
     @api.model
-    def _process_order(self, pos_order):
+    def _process_order(self, order, draft, existing_order):
         # Don't change original dict, because in case of SERIALIZATION_FAILURE
         # the method will be called again
-        pos_order = copy.deepcopy(pos_order)
+        pos_order = order['data']
         credit_updates = []
         amount_via_discount = 0
         for payment in pos_order["statement_ids"]:
@@ -637,13 +637,15 @@ class PosOrder(models.Model):
                 )
                 payment[2]["amount"] = 0
         pos_order["amount_via_discount"] = amount_via_discount
-        order = super(PosOrder, self)._process_order(pos_order)
+        order['data'] = pos_order
+        order_id = super(PosOrder, self)._process_order(order, draft, existing_order)
         for update in credit_updates:
-            update["order_id"] = order.id
+            update["order_id"] = order_id
             entry = self.env["pos.credit.update"].sudo().create(update)
             entry.switch_to_confirm()
+        order = self.browse(order_id)
         order.set_discounts()
-        return order
+        return order_id
 
     @api.model
     def _order_fields(self, ui_order):
