@@ -669,7 +669,8 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                 _.each(journal.category_ids, function(categ) {
                     categ_names.push(self.pos.db.get_category_by_id(categ).name);
                 });
-                body.push(categ_names.join(", ") + " with " + cr.journal_id[1] + " ");
+                console.log(cr);
+                body.push(categ_names.join(", ") + " with " + cr.cash_journal_id[1] + " ");
             });
             // TODO we can make a better formatting here
             return "You may only buy " + body.toString();
@@ -769,7 +770,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                     var sum_pl = order.get_summary_for_cashregister(cr);
                     // No need to check that debt_limit is in limits by the reason of get_payment_limits definition
                     if (sum_pl > limits.debt_limit) {
-                        flag = cr.journal_id[1];
+                        flag = cr.cash_journal_id[1];
                     }
                 });
                 return flag;
@@ -824,7 +825,8 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                             pos: self.pos,
                             order: order,
                             cashregister: _.find(self.pos.cashregisters, function(cr) {
-                                return cr.journal_id[0] === debt.journal_id[0];
+                                console.log(cr);
+                                return cr.cash_journal_id[0] === debt.journal_id[0];
                             }),
                         }
                     );

@@ -37,8 +37,6 @@ class ResPartner(models.Model):
     @api.depends("report_pos_debt_ids")
     def _compute_debt_company(self):
         partners = self.filtered(lambda r: len(r.child_ids))
-        if not partners:
-            return
         domain = [("partner_id", "in", partners.ids + partners.mapped("child_ids").ids)]
         fields = ["partner_id", "balance"]
         res = self.env["report.pos.debt"].read_group(domain, fields, "partner_id")
@@ -51,8 +49,8 @@ class ResPartner(models.Model):
                 if pid == r.id or pid in r.child_ids.ids:
                     res_index[r.id] += balance
 
-        for r in partners:
-            r.debt_company = -res_index[r.id]
+        for r in self:
+            r.debt_company = -res_index[r.id] if r.id in res_index else 0
             r.credit_balance_company = -r.debt_company
 
     def debt_history(self, limit=0):
@@ -630,7 +628,7 @@ class PosOrder(models.Model):
         credit_updates = []
         amount_via_discount = 0
         for payment in pos_order["statement_ids"]:
-            journal = self.env["account.journal"].browse(payment[2]["journal_id"])
+            journal = self.env["pos.payment.method"].browse(payment[2]["payment_method_id"]).cash_journal_id
             if journal.credits_via_discount:
                 amount = float(payment[2]["amount"])
                 product_list = list()
@@ -646,7 +644,7 @@ class PosOrder(models.Model):
                 product_list = "".join(product_list).strip(" + ")
                 credit_updates.append(
                     {
-                        "journal_id": payment[2]["journal_id"],
+                        "journal_id": journal.id,
                         "balance": -amount,
                         "partner_id": pos_order["partner_id"],
                         "update_type": "balance_update",
@@ -714,12 +712,12 @@ class PosOrder(models.Model):
             return super(PosOrder, self).test_paid()
 
 
-class AccountBankStatement(models.Model):
-    _inherit = "account.bank.statement"
+class PosPayment(models.Model):
+    _inherit = "pos.payment"
 
     pos_credit_update_ids = fields.One2many(
         "pos.credit.update",
-        "account_bank_statement_id",
+        "pos_payment_id",
         string="Non-Accounting Transactions",
     )
     pos_credit_update_balance = fields.Monetary(
@@ -789,10 +787,10 @@ class PosCreditUpdate(models.Model):
     )
     order_id = fields.Many2one("pos.order", string="POS Order")
     config_id = fields.Many2one(related="order_id.config_id", string="POS", store=True)
-    account_bank_statement_id = fields.Many2one(
-        "account.bank.statement",
-        compute="_compute_bank_statement",
-        string="Account Bank Statement",
+    pos_payment_id = fields.Many2one(
+        "pos.payment",
+        compute="_compute_pos_payment",
+        string="Pos Payment",
         store=True,
     )
     reversed_balance = fields.Monetary(
@@ -802,16 +800,16 @@ class PosCreditUpdate(models.Model):
     )
 
     @api.depends("order_id", "journal_id")
-    def _compute_bank_statement(self):
+    def _compute_pos_payment(self):
         for record in self:
             if record.order_id:
                 order = record.env["pos.order"].browse(record.order_id.id)
-                record.account_bank_statement_id = (
-                    record.env["account.bank.statement"]
+                record.pos_payment_id = (
+                    record.env["pos.payment"]
                     .search(
                         [
-                            ("journal_id", "=", record.journal_id.id),
-                            ("pos_session_id", "=", order.session_id.id),
+                            ("payment_method_id", "=", record.payment_method_id.id),
+                            ("pos_order_id", "=", order.id),
                         ]
                     )
                     .id
