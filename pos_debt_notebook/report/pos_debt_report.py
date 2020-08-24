@@ -54,13 +54,17 @@ class PosDebtReport(models.Model):
                 -- Using Debt journal in POS
                 --
                 SELECT
-                    st_line.id as id,
+                    pp.id as id,
                     o.id as order_id,
                     NULL::integer as move_id,
                     NULL::integer as payment_id,
                     NULL::integer as update_id,
-                    -st_line.amount as balance,
-                    st.state as state,
+                    -pp.amount as balance,
+                    CASE o.state
+                        WHEN 'done' THEN 'confirm'
+                        WHEN 'paid' THEN 'open'
+                        ELSE o.state
+                    END as state,
                     false as credit_product,
 
                     o.date_order as date,
@@ -72,12 +76,12 @@ class PosDebtReport(models.Model):
                     pricelist.currency_id as currency_id,
                     o.product_list as product_list,
 
-                    st.journal_id as journal_id
+                    ppm.cash_journal_id as journal_id
 
-                FROM account_bank_statement_line as st_line
-                    LEFT JOIN account_bank_statement st ON (st.id=st_line.statement_id)
-                    LEFT JOIN account_journal journal ON (journal.id=st.journal_id)
-                    LEFT JOIN pos_order o ON (o.id=st_line.pos_statement_id)
+                FROM pos_payment as pp
+                    LEFT JOIN pos_payment_method ppm ON (ppm.id=pp.payment_method_id)
+                    LEFT JOIN account_journal journal ON (journal.id=ppm.cash_journal_id)
+                    LEFT JOIN pos_order o ON (o.id=pp.pos_order_id)
 
                     LEFT JOIN pos_session session ON (session.id=o.session_id)
                     LEFT JOIN product_pricelist pricelist ON (pricelist.id=o.pricelist_id)
@@ -161,7 +165,7 @@ class PosDebtReport(models.Model):
                     LEFT JOIN account_journal journal ON (journal.id=pt.credit_product)
                 WHERE
                     journal.debt=true
-                    AND move.state in ('paid')
+                    AND move.state in ('posted')
                 )
                 UNION ALL
                 (
