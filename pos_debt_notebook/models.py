@@ -31,7 +31,7 @@ class ResPartner(models.Model):
         for data in res:
             res_index[data["partner_id"][0]] = data
         for r in self:
-            r.debt = -res_index[r.id]["balance"]
+            r.debt = -res_index[r.id]["balance"] if r.id in res_index else 0
             r.credit_balance = -r.debt
 
     @api.depends("report_pos_debt_ids")
