@@ -56,7 +56,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                     });
                 },
             });
-            models.load_fields("pos.payment.method", ["cash_journal_id"]);
+            models.load_fields("pos.payment.method", ["cash_journal_id", "debt"]);
             models.load_fields("product.product", ["credit_product"]);
             _super_posmodel.initialize.apply(this, arguments);
         },
@@ -267,12 +267,12 @@ odoo.define("pos_debt_notebook.pos", function(require) {
         },
         has_debt_journal: function() {
             return this.paymentlines.any(function(line) {
-                return line.payment_method.journal.debt;
+                return line.payment_method.debt;
             });
         },
         has_paymentlines_with_credits_via_discounts: function() {
             return _.filter(this.get_paymentlines(), function(pl) {
-                return pl.payment_method.journal.credits_via_discount;
+                return pl.payment_method.debt && pl.payment_method.journal.credits_via_discount;
             });
         },
         has_credit_product: function() {
@@ -289,7 +289,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
             var debt_amount = 0;
             var plines = this.get_paymentlines();
             for (var i = 0; i < plines.length; i++) {
-                if (plines[i].payment_method.journal.debt) {
+                if (plines[i].payment_method.debt) {
                     debt_amount += plines[i].amount;
                 }
             }
@@ -325,13 +325,14 @@ odoo.define("pos_debt_notebook.pos", function(require) {
             // 'due' = remained amount to pay
             limit_code = limit_code || "all";
             var vals = {};
-            if (cashregister.journal.debt) {
+            if (cashregister.debt) {
+                var journal = cashregister.journal;
                 var partner_balance = this.pos.get_client().debts[
-                        cashregister.journal.id
+                        journal.id
                     ].balance,
-                    category_list = cashregister.journal.category_ids;
+                    category_list = journal.category_ids;
                 var debt_limit = round_pr(
-                    partner_balance + cashregister.journal.debt_limit,
+                    partner_balance + journal.debt_limit,
                     this.pos.currency.rounding
                 );
                 if (limit_code === "debt_limit" || limit_code === "all") {
@@ -355,7 +356,8 @@ odoo.define("pos_debt_notebook.pos", function(require) {
             return _.reduce(
                 this.paymentlines.models,
                 function(memo, pl) {
-                    if (pl.payment_method.journal.id === cashregister.journal.id) {
+                    var pm = pl.payment_method;
+                    if (pm.debt && pm.journal.id === cashregister.journal.id) {
                         return memo + pl.amount;
                     }
                     return memo;
@@ -411,8 +413,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
         add_paymentline: function(cashregister) {
             this.assert_editable();
             var self = this;
-            var journal = cashregister.journal;
-            if (!this.get_client() && (this.has_credit_product() || journal.debt)) {
+            if (!this.get_client() && (this.has_credit_product() || cashregister.debt)) {
                 setTimeout(function() {
                     self.pos.gui.show_screen("clientlist");
                 }, 30);
@@ -427,7 +428,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                     payment_method: cashregister,
                 }
             );
-            if (cashregister.journal.debt && this.get_client()) {
+            if (cashregister.debt && this.get_client()) {
                 if (due < 0) {
                     newPaymentline.set_amount(due);
                 } else {
@@ -621,7 +622,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                 order_total = order.get_total_with_tax(),
                 partner = this.pos.get_client();
             var debt_pl = _.filter(paymentlines, function(pl) {
-                return pl.payment_method.journal.debt;
+                return pl.payment_method.debt;
             });
             if (debt_pl && partner) {
                 var disc_credits_pl = order.has_paymentlines_with_credits_via_discounts();
@@ -657,7 +658,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                 })
             );
             return _.filter(cashregisters, function(cr) {
-                return cr.journal.debt;
+                return cr.debt;
             });
         },
         restricted_categories_message: function(cashregisters) {
@@ -780,10 +781,10 @@ odoo.define("pos_debt_notebook.pos", function(require) {
             var order = this.pos.get_order(),
                 paymentlines = order.get_paymentlines();
             for (var i = 0; i < paymentlines.length; i++) {
-                var journal = paymentlines[i].payment_method.journal;
+                var pm = paymentlines[i].payment_method;
                 if (
-                    journal.debt &&
-                    !journal.pos_cash_out &&
+                    pm.debt &&
+                    !pm.journal.pos_cash_out &&
                     order.get_change(paymentlines[i]) > 0
                 ) {
                     return true;
@@ -810,7 +811,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
             var paymentLines = order.get_paymentlines();
             if (paymentLines.length) {
                 _.each(paymentLines, function(paymentLine) {
-                    if (paymentLine.cashregister.journal.debt) {
+                    if (paymentLine.cashregister.debt) {
                         paymentLine.destroy();
                     }
                 });
@@ -921,7 +922,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                 }
             }
             var debt_cashregisters = _.filter(this.pos.cashregisters, function(cr) {
-                return cr.journal.debt;
+                return cr.debt;
             });
             _.each(debt_cashregisters, function(cr) {
                 var journal_id = cr.journal.id;
@@ -958,7 +959,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                     cr
                 ) {
                     return (
-                        cr.journal.debt &&
+                        cr.debt &&
                         cr.journal.credits_autopay &&
                         client.debts[cr.journal.id].balance > 0
                     );
@@ -1175,7 +1176,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                         total_balance += debt_history[i].balance;
                     }
                     var cashregisters = _.filter(self.pos.cashregisters, function(cr) {
-                        return cr.journal.debt;
+                        return cr.debt;
                     });
                     _.each(cashregisters, function(cr) {
                         var journal_id = cr.journal.id;
@@ -1289,7 +1290,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                     // Select debt journal
                     var debtjournal = false;
                     _.each(self.pos.cashregisters, function(cashregister) {
-                        if (cashregister.journal.debt) {
+                        if (cashregister.debt) {
                             debtjournal = cashregister;
                         }
                     });
@@ -1303,7 +1304,7 @@ odoo.define("pos_debt_notebook.pos", function(require) {
                     which opens the partner list and then selects partner
                     and clicks on "Select Customer and Pay Full Debt" */
                         _.each(paymentLines.models, function(paymentLine) {
-                            if (paymentLine.cashregister.journal.debt) {
+                            if (paymentLine.cashregister.debt) {
                                 paymentLine.destroy();
                             }
                         });

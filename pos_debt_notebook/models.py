@@ -712,6 +712,12 @@ class PosOrder(models.Model):
             return super(PosOrder, self).test_paid()
 
 
+class PosPaymentMethod(models.Model):
+    _inherit = "pos.payment.method"
+
+    debt = fields.Boolean(related='cash_journal_id.debt')
+
+
 class PosPayment(models.Model):
     _inherit = "pos.payment"
 
